@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Portions Copyright (c) 2018-2021 Virginia Tech
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*************************************************************************************************
  * Database extension
  *                                                               Copyright (C) 2009-2012 FAL Labs
@@ -1278,7 +1280,7 @@ class IndexDB {
     if (omode_ == 0) {
       set_error(_KCCODELINE_, BasicDB::Error::INVALID, "not opened");
       *sp = 0;
-      return false;
+      return NULL;
     }
     if (!cache_) return db_.get(kbuf, ksiz, sp);
     size_t dvsiz = 0;

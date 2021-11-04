@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Portions Copyright (c) 2018-2021 Virginia Tech
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*************************************************************************************************
  * System-dependent configurations
  *                                                               Copyright (C) 2009-2012 FAL Labs
@@ -22,7 +24,9 @@
  * system discrimination
  *************************************************************************************************/
 
-
+//#define RLU 1
+//#define MVRLU 1
+//#define TBB 1
 #if defined(__linux__)
 
 #define _SYS_LINUX_
@@ -90,7 +94,7 @@
 
 #endif
 
-#define _KC_VERSION    "1.2.76"
+#define _KC_VERSION    "1.2.76a"
 #define _KC_LIBVER     16
 #define _KC_LIBREV     13
 #define _KC_FMTVER     5

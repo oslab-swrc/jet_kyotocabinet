@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Portions Copyright (c) 2018-2021 Virginia Tech
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*************************************************************************************************
  * Threading devices
  *                                                               Copyright (C) 2009-2012 FAL Labs
@@ -15,10 +17,23 @@
 
 #include "kcthread.h"
 #include "myconf.h"
+#include <stdio.h>
+
+#if defined(MVRLU)
+#include "mvrlu.h"
+#else
+#include "rlu.h"
+#endif
 
 namespace kyotocabinet {                 // common namespace
 
-
+thread_local rlu_thread_data_t *self;
+rlu_thread_data_t* get_thread_data(){
+  rlu_thread_data_t* dummy = self;
+  if(dummy == NULL)
+    throw std::runtime_error("self is NULL");
+  return dummy;
+}
 /**
  * Constants for implementation.
  */
@@ -110,7 +125,7 @@ Thread::~Thread() {
  */
 void Thread::start() {
 #if defined(_SYS_MSVC_) || defined(_SYS_MINGW_)
-  _assert_(true);
+  _assert_(false);
   ThreadCore* core = (ThreadCore*)opq_;
   if (core->th) throw std::invalid_argument("already started");
   ::DWORD id;
@@ -135,6 +150,7 @@ void Thread::join() {
   _assert_(true);
   ThreadCore* core = (ThreadCore*)opq_;
   if (!core->th) throw std::invalid_argument("not alive");
+  RLU_THREAD_FINISH(self);
   if (::WaitForSingleObject(core->th, INFINITE) == WAIT_FAILED)
     throw std::runtime_error("WaitForSingleObject");
   ::CloseHandle(core->th);
@@ -283,8 +299,23 @@ static ::DWORD threadrun(::LPVOID arg) {
 #else
 static void* threadrun(void* arg) {
   _assert_(true);
+#if defined(RLU)
+  self = (rlu_thread_data_t*)malloc(sizeof(rlu_thread_data_t));
+  if(self == NULL)
+    throw std::runtime_error("self is null");
+  RLU_THREAD_INIT(self);
+#endif
+#if defined(MVRLU)
+  self = (rlu_thread_data_t*)RLU_THREAD_ALLOC();
+  if(self == NULL)
+    throw std::runtime_error("self is null");
+  RLU_THREAD_INIT(self);
+#endif
   Thread* thread = (Thread*)arg;
   thread->run();
+#if defined(RLU) || defined(MVRLU)
+  RLU_THREAD_FINISH(self);
+#endif
   return NULL;
 }
 #endif
@@ -668,7 +699,7 @@ void SpinLock::lock() {
 #elif _KC_GCCATOMIC
   _assert_(true);
   uint32_t wcnt = 0;
-  while (!__sync_bool_compare_and_swap(&opq_, 0, 1)) {
+  while (!__sync_bool_compare_and_swap(&opq_, (void*)0, (void*)1)) {
     if (wcnt >= LOCKBUSYLOOP) {
       Thread::chill();
     } else {
@@ -693,7 +724,7 @@ bool SpinLock::lock_try() {
   return ::InterlockedCompareExchange((LONG*)&opq_, 1, 0) == 0;
 #elif _KC_GCCATOMIC
   _assert_(true);
-  return __sync_bool_compare_and_swap(&opq_, 0, 1);
+  return __sync_bool_compare_and_swap(&opq_, (void*)0, (void*)1);
 #else
   _assert_(true);
   ::pthread_spinlock_t* spin = (::pthread_spinlock_t*)opq_;
@@ -945,6 +976,9 @@ RWLock::RWLock() : opq_(NULL) {
   _assert_(true);
   SpinRWLock* rwlock = new SpinRWLock;
   opq_ = (void*)rwlock;
+#elif defined(TBB)
+  tbb::reader_writer_lock* rwlock = new tbb::reader_writer_lock();
+  opq_ = (void*)rwlock;
 #else
   _assert_(true);
   ::pthread_rwlock_t* rwlock = new ::pthread_rwlock_t;
@@ -961,6 +995,9 @@ RWLock::~RWLock() {
 #if defined(_SYS_MSVC_) || defined(_SYS_MINGW_)
   _assert_(true);
   SpinRWLock* rwlock = (SpinRWLock*)opq_;
+  delete rwlock;
+#elif defined(TBB)
+  tbb::reader_writer_lock* rwlock = (tbb::reader_writer_lock*)opq_;
   delete rwlock;
 #else
   _assert_(true);
@@ -979,6 +1016,10 @@ void RWLock::lock_writer() {
   _assert_(true);
   SpinRWLock* rwlock = (SpinRWLock*)opq_;
   rwlock->lock_writer();
+#elif defined(TBB)
+  tbb::reader_writer_lock* rwlock = (tbb::reader_writer_lock*)opq_;
+  //printf("writerlock: %p\n",rwlock);
+  rwlock->lock();
 #else
   _assert_(true);
   ::pthread_rwlock_t* rwlock = (::pthread_rwlock_t*)opq_;
@@ -995,6 +1036,10 @@ bool RWLock::lock_writer_try() {
   _assert_(true);
   SpinRWLock* rwlock = (SpinRWLock*)opq_;
   return rwlock->lock_writer_try();
+#elif defined(TBB)
+  tbb::reader_writer_lock* rwlock = (tbb::reader_writer_lock*)opq_;
+  //printf("TRYwriterlock: %p\n",rwlock);
+  return(rwlock->try_lock());
 #else
   _assert_(true);
   ::pthread_rwlock_t* rwlock = (::pthread_rwlock_t*)opq_;
@@ -1014,6 +1059,10 @@ void RWLock::lock_reader() {
   _assert_(true);
   SpinRWLock* rwlock = (SpinRWLock*)opq_;
   rwlock->lock_reader();
+#elif defined(TBB)
+  tbb::reader_writer_lock* rwlock = (tbb::reader_writer_lock*)opq_;
+  //printf("readerlock: %p\n",rwlock);
+  rwlock->lock_read();
 #else
   _assert_(true);
   ::pthread_rwlock_t* rwlock = (::pthread_rwlock_t*)opq_;
@@ -1030,6 +1079,10 @@ bool RWLock::lock_reader_try() {
   _assert_(true);
   SpinRWLock* rwlock = (SpinRWLock*)opq_;
   return rwlock->lock_reader_try();
+#elif defined(TBB)
+  tbb::reader_writer_lock* rwlock = (tbb::reader_writer_lock*)opq_;
+  //printf("TRYreaderlock: %p\n",rwlock);
+  return (rwlock->try_lock_read());
 #else
   _assert_(true);
   ::pthread_rwlock_t* rwlock = (::pthread_rwlock_t*)opq_;
@@ -1048,6 +1101,10 @@ void RWLock::unlock() {
 #if defined(_SYS_MSVC_) || defined(_SYS_MINGW_)
   _assert_(true);
   SpinRWLock* rwlock = (SpinRWLock*)opq_;
+  rwlock->unlock();
+#elif defined(TBB)
+  tbb::reader_writer_lock* rwlock = (tbb::reader_writer_lock*)opq_;
+  //printf("unlock: %p\n",rwlock);
   rwlock->unlock();
 #else
   _assert_(true);

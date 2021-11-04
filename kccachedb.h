@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Portions Copyright (c) 2018-2021 Virginia Tech
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*************************************************************************************************
  * Cache hash database
  *                                                               Copyright (C) 2009-2012 FAL Labs
@@ -26,6 +28,14 @@
 #include <kcregex.h>
 #include <kcdb.h>
 #include <kcplantdb.h>
+
+#if defined(MVRLU)
+#include "mvrlu.h"
+#else
+#include "rlu.h"
+#endif
+
+#include "myconf.h"
 
 namespace kyotocabinet {                 // common namespace
 
@@ -106,6 +116,7 @@ class CacheDB : public BasicDB {
      * be performed in this function.
      */
     bool accept(Visitor* visitor, bool writable = true, bool step = false) {
+      _assert_(0);
       _assert_(visitor);
       ScopedRWLock lock(&db_->mlock_, true);
       if (db_->omode_ == 0) {
@@ -133,7 +144,7 @@ class CacheDB : public BasicDB {
           rvsiz = zsiz;
         }
       }
-      size_t vsiz;
+      size_t vsiz = 0;
       const char* vbuf = visitor->visit_full(dbuf, rksiz, rvbuf, rvsiz, &vsiz);
       delete[] zbuf;
       if (vbuf == Visitor::REMOVE) {
@@ -376,7 +387,7 @@ class CacheDB : public BasicDB {
       mlock_(), flock_(), error_(), logger_(NULL), logkinds_(0), mtrigger_(NULL),
       omode_(0), curs_(), path_(""), type_(TYPECACHE),
       opts_(0), bnum_(DEFBNUM), capcnt_(-1), capsiz_(-1),
-      opaque_(), embcomp_(ZLIBRAWCOMP), comp_(NULL), slots_(), rttmode_(true), tran_(false) {
+      opaque_(), embcomp_(ZLIBRAWCOMP), comp_(NULL), slots_(), rttmode_(false), tran_(false) {
     _assert_(true);
   }
   /**
@@ -409,7 +420,10 @@ class CacheDB : public BasicDB {
    */
   bool accept(const char* kbuf, size_t ksiz, Visitor* visitor, bool writable = true) {
     _assert_(kbuf && ksiz <= MEMMAXSIZ && visitor);
+#if defined(RLU) || defined(MVRLU)
+#else
     ScopedRWLock lock(&mlock_, false);
+#endif
     if (omode_ == 0) {
       set_error(_KCCODELINE_, Error::INVALID, "not opened");
       return false;
@@ -423,9 +437,24 @@ class CacheDB : public BasicDB {
     int32_t sidx = hash % SLOTNUM;
     hash /= SLOTNUM;
     Slot* slot = slots_ + sidx;
-    slot->lock.lock();
+
+#if defined(RLU) || defined(MVRLU)
+    if(writable)
+#endif
+	slot->lock.lock();
+
+#if defined(RLU) || defined(MVRLU)
+    rlu_thread_data_t *self = get_thread_data();
+    RLU_READER_LOCK(self);
+#endif
+
     accept_impl(slot, hash, kbuf, ksiz, visitor, comp_, rttmode_);
-    slot->lock.unlock();
+
+#if defined(RLU) || defined(MVRLU)
+    RLU_READER_UNLOCK(self);
+    if(writable)
+#endif
+	slot->lock.unlock();
     return true;
   }
   /**
@@ -734,6 +763,9 @@ class CacheDB : public BasicDB {
    */
   bool open(const std::string& path, uint32_t mode = OWRITER | OCREATE) {
     _assert_(true);
+#if defined(MVRLU)
+	mvrlu_init();
+#endif
     ScopedRWLock lock(&mlock_, true);
     if (omode_ != 0) {
       set_error(_KCCODELINE_, Error::INVALID, "already opened");
@@ -747,6 +779,7 @@ class CacheDB : public BasicDB {
     size_t capsiz = capsiz_ > 0 ? capsiz_ / SLOTNUM + 1 : (1ULL << (sizeof(capsiz) * 8 - 1));
     if (capsiz > sizeof(*this) / SLOTNUM) capsiz -= sizeof(*this) / SLOTNUM;
     if (capsiz > bnum * sizeof(Record*)) capsiz -= bnum * sizeof(Record*);
+    printf("bnum = %ld capcnt = %ld capsiz = %ld\n", bnum, capcnt, capsiz);
     for (int32_t i = 0; i < SLOTNUM; i++) {
       initialize_slot(slots_ + i, bnum, capcnt, capsiz);
     }
@@ -1498,6 +1531,15 @@ class CacheDB : public BasicDB {
     Record* right;                       ///< right child record
     Record* prev;                        ///< privious record
     Record* next;                        ///< next record
+    char dbuf[1024];
+  };
+  struct Record_dummy {
+    uint32_t ksiz;                       ///< size of the key
+    uint32_t vsiz;                       ///< size of the value
+    Record* left;                        ///< left child record
+    Record* right;                       ///< right child record
+    Record* prev;                        ///< privious record
+    Record* next;                        ///< next record
   };
   /**
    * Transaction log.
@@ -1614,6 +1656,253 @@ class CacheDB : public BasicDB {
    * @param comp the data compressor.
    * @param rtt whether to move the record to the last.
    */
+#if defined(RLU) || defined(MVRLU)
+  void accept_impl(Slot* slot, uint64_t hash, const char* kbuf, size_t ksiz, Visitor* visitor,
+                   Compressor* comp, bool rtt) {
+    _assert_(slot && kbuf && ksiz <= MEMMAXSIZ && visitor);
+    //Get the thread data
+    rlu_thread_data_t* self = get_thread_data();
+    _assert_(self->uniq_id < 64);
+    size_t bidx = hash % slot->bnum;
+    Record* head = slot->buckets[bidx];
+    if (!head) {
+        head = (Record*)RLU_ALLOC(sizeof(Record));
+        head->left = NULL;
+	slot->buckets[bidx] = head;
+    }
+    Record* prev = (Record*)RLU_DEREF(self, head);
+
+    Record* rec = prev->left; //Root of tree
+    rec = (Record*) RLU_DEREF(self, rec);
+
+    int direction = 0;
+
+    uint32_t fhash = fold_hash(hash) & ~KSIZMAX;
+    while (rec) {
+      uint32_t rhash = rec->ksiz & ~KSIZMAX;
+      uint32_t rksiz = rec->ksiz & KSIZMAX;
+      if (fhash > rhash) {
+        prev = rec;
+        direction = 0;
+        rec = (Record*) RLU_DEREF(self,rec->left);
+      } else if (fhash < rhash) {
+        prev = rec;
+        direction = 1;
+        rec = (Record*) RLU_DEREF(self,rec->right);
+      } else {
+        char* dbuf = (char*)rec->dbuf;
+        int32_t kcmp = compare_keys(kbuf, ksiz, dbuf, rksiz);
+        if (kcmp < 0) {
+          prev = rec;
+          direction = 0;
+          rec = (Record*) RLU_DEREF(self, rec->left);
+        } else if (kcmp > 0) {
+          prev = rec;
+          direction = 1;
+          rec = (Record*)RLU_DEREF(self, rec->right);
+        } else {
+          const char* rvbuf = dbuf + rksiz;
+          size_t rvsiz = rec->vsiz;
+          char* zbuf = NULL;
+          size_t zsiz = 0;
+          if (comp) {
+            zbuf = comp->decompress(rvbuf, rvsiz, &zsiz);
+            if (zbuf) {
+              rvbuf = zbuf;
+              rvsiz = zsiz;
+            }
+          }
+          size_t vsiz;
+          const char* vbuf = visitor->visit_full(dbuf, rksiz, rvbuf, rvsiz, &vsiz);
+          delete[] zbuf;
+          if (vbuf == Visitor::REMOVE) {
+            if (tran_) {
+              TranLog log(kbuf, ksiz, dbuf + rksiz, rec->vsiz);
+              slot->trlogs.push_back(log);
+            }
+            if (!curs_.empty()) escape_cursors(rec);
+            if (RLU_IS_SAME_PTRS(rec, slot->first)) {
+                    RLU_ASSIGN_PTR(self, &(slot->first),rec->next);
+            }
+            if (RLU_IS_SAME_PTRS(rec, slot->last)) {
+                    RLU_ASSIGN_PTR(self, &(slot->last),rec->prev);
+            }
+            if (rec->prev){
+              Record* prevp = rec->prev;
+              RLU_TRY_LOCK(self, &(prevp));
+              RLU_ASSIGN_PTR(self, &(prevp->next), rec->next);
+            }
+            if (rec->next){
+              Record* nextp = rec->next;
+              RLU_TRY_LOCK(self, &(nextp));
+              RLU_ASSIGN_PTR(self, &(nextp->prev), rec->prev);
+            }
+            
+	    assert(prev != NULL);
+	    RLU_TRY_LOCK(self, &rec);
+	    RLU_TRY_LOCK(self, &prev);
+            
+            if (rec->left && !rec->right) {
+              if(direction == 0)
+                      RLU_ASSIGN_PTR(self, &(prev->left), rec->left);
+              else
+                      RLU_ASSIGN_PTR(self, &(prev->right), rec->left);
+            } else if (!rec->left && rec->right) {
+              if (direction == 0)
+                      RLU_ASSIGN_PTR(self, &(prev->left), rec->right);
+              else
+                      RLU_ASSIGN_PTR(self, &(prev->right), rec->right);
+            } else if (!rec->left) {
+              if (direction == 0)
+                      prev->left = NULL;
+              else
+                      prev->right = NULL;
+            } else {
+              Record* pivot = (Record*) RLU_DEREF(self, rec->left);
+              Record* pivot_prev;
+              int pivot_direction = 1;
+              if (pivot->right) {
+                pivot_prev = pivot;
+                pivot_direction = 1;
+                pivot = (Record*)RLU_DEREF(self, pivot->right);
+                while (pivot->right) {
+                  pivot_prev = pivot;
+                  pivot_direction = 1;
+                  pivot = (Record*)RLU_DEREF(self, pivot->right);
+                }
+		assert(pivot_prev != NULL);
+                RLU_TRY_LOCK(self, &(pivot_prev));
+                if(direction == 0)
+                        RLU_ASSIGN_PTR(self, &(prev->left), pivot);
+                else
+                        RLU_ASSIGN_PTR(self, &(prev->right), pivot);
+                
+                if(pivot_direction == 0)
+                        RLU_ASSIGN_PTR(self, &(pivot_prev->left), pivot->left);
+                else
+                        RLU_ASSIGN_PTR(self, &(pivot_prev->right), pivot->left);
+
+                RLU_ASSIGN_PTR(self, &(pivot->left), rec->left);
+                RLU_ASSIGN_PTR(self, &(pivot->right),rec->right);
+              } else {
+                if(direction == 0)
+                        RLU_ASSIGN_PTR(self, &(prev->left), pivot);
+                else
+                        RLU_ASSIGN_PTR(self, &(prev->right), pivot);
+                RLU_ASSIGN_PTR(self, &(pivot->right), rec->right);
+              }
+            }
+            slot->count--;
+            //slot->size -= sizeof(Record) + rksiz + rec->vsiz;
+            slot->size -= sizeof(Record);
+            RLU_FREE(self, rec);
+          } else {
+            bool adj = false;
+            if (vbuf != Visitor::NOP) {
+              char* zbuf = NULL;
+              size_t zsiz = 0;
+              if (comp) {
+                zbuf = comp->compress(vbuf, vsiz, &zsiz);
+                if (zbuf) {
+                  vbuf = zbuf;
+                  vsiz = zsiz;
+                }
+              }
+              if (tran_) {
+                TranLog log(kbuf, ksiz, dbuf + rksiz, rec->vsiz);
+                slot->trlogs.push_back(log);
+              } else {
+                adj = vsiz > rec->vsiz;
+              }
+              slot->size -= rec->vsiz;
+              slot->size += vsiz;
+              if (vsiz > rec->vsiz) {
+                assert(0 && "Value resize required");
+                Record* old = rec;
+                rec = (Record*)xrealloc(rec, sizeof(*rec) + ksiz + vsiz);
+                if (rec != old) {
+                  if (!curs_.empty()) adjust_cursors(old, rec);
+                  if (slot->first == old) slot->first = rec;
+                  if (slot->last == old) slot->last = rec;
+                  if (rec->prev) rec->prev->next = rec;
+                  if (rec->next) rec->next->prev = rec;
+                  dbuf = (char*)rec + sizeof(*rec);
+                }
+              }
+	      assert(rec != NULL); 
+              RLU_TRY_LOCK(self, &rec);
+              dbuf = (char*)rec->dbuf;
+              std::memcpy(dbuf + ksiz, vbuf, vsiz);
+              rec->vsiz = vsiz;
+              delete[] zbuf;
+            }
+#if 0
+            if (rtt && slot->last != rec) {
+              if (!curs_.empty()) escape_cursors(rec);
+              if (RLU_IS_SAME_PTRS(head->next,rec)) RLU_ASSIGN_PTR(self, &(head->next), rec->next);
+              if (rec->prev) RLU_ASSIGN_PTR(self, &(rec->prev->next), rec->next);
+              if (rec->next) RLU_ASSIGN_PTR(self, &(rec->next->prev), rec->prev);
+              RLU_ASSIGN_PTR(self, &(rec->prev), head->prev);
+              rec->next = NULL;
+              RLU_ASSIGN_PTR(self, &(RLU_head->prev->next), rec);
+              RLU_ASSIGN_PTR(self, &(slot->last), rec);
+            }
+#endif
+            //if (adj) adjust_slot_capacity(slot);
+          }
+          return;
+        }
+      }
+    }
+    size_t vsiz;
+    const char* vbuf = visitor->visit_empty(kbuf, ksiz, &vsiz);
+    if (vbuf != Visitor::NOP && vbuf != Visitor::REMOVE) {
+      char* zbuf = NULL;
+      size_t zsiz = 0;
+      if (comp) {
+        zbuf = comp->compress(vbuf, vsiz, &zsiz);
+        if (zbuf) {
+          vbuf = zbuf;
+          vsiz = zsiz;
+        }
+      }
+      if (tran_) {
+        TranLog log(kbuf, ksiz);
+        slot->trlogs.push_back(log);
+      }
+      slot->size += sizeof(Record);
+      _assert_(ksiz + vsiz < 1024);
+      rec = (Record*)RLU_ALLOC(sizeof(*rec));
+      char* dbuf = (char*) rec->dbuf;
+      std::memcpy(dbuf, kbuf, ksiz);
+      rec->ksiz = ksiz | fhash;
+      std::memcpy(dbuf + ksiz, vbuf, vsiz);
+      rec->vsiz = vsiz;
+      rec->left = NULL;
+      rec->right = NULL;
+      rec->prev = slot->last;
+      rec->next = NULL;
+      assert(prev != NULL);
+      if(!RLU_TRY_LOCK(self, &(prev)))
+	      printf("prev try lock failed\n");
+      if(direction == 0)
+              RLU_ASSIGN_PTR(self, &(prev->left), rec);
+      else
+              RLU_ASSIGN_PTR(self, &(prev->right), rec);
+      if (!slot->first) slot->first = rec;
+      //TODO make this try lock
+      if (slot->last){
+              Record* last = slot->last;
+              RLU_TRY_LOCK(self, &last);
+              last->next = rec;
+      }
+      slot->last = rec;
+      slot->count++;
+      //if (!tran_) adjust_slot_capacity(slot);
+      delete[] zbuf;
+    }
+  }
+#else
   void accept_impl(Slot* slot, uint64_t hash, const char* kbuf, size_t ksiz, Visitor* visitor,
                    Compressor* comp, bool rtt) {
     _assert_(slot && kbuf && ksiz <= MEMMAXSIZ && visitor);
@@ -1780,6 +2069,7 @@ class CacheDB : public BasicDB {
       delete[] zbuf;
     }
   }
+#endif
   /**
    * Get the number of records.
    * @return the number of records, or -1 on failure.
@@ -1923,7 +2213,6 @@ class CacheDB : public BasicDB {
       std::memcpy(kbuf, dbuf, rksiz);
       uint64_t hash = hash_record(kbuf, rksiz) / SLOTNUM;
       Remover remover;
-      accept_impl(slot, hash, dbuf, rksiz, &remover, NULL, false);
       if (kbuf != stack) delete[] kbuf;
     }
   }

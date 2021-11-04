@@ -1,3 +1,29 @@
+# Ugly integration with the top build
+
+CUR_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+include $(CUR_DIR)/../../Makefile.inc
+
+ifeq ($(RLU),1)
+  # `RLU=1 make`
+  MOD_SUFFIX = -rlu
+  MOD_CFLAG  = -DRLU=1
+endif
+
+ifeq ($(MVRLU),1)
+  # `MVRLU=1 make`
+  MOD_SUFFIX = -mvrlu-ordo
+  MOD_CFLAG  = -DMVRLU=1
+endif
+
+ifeq ($(VANILLA),1)
+  # `VANILLA=1 make`
+  MOD_SUFFIX = -vanilla
+  MOD_CFLAG  =
+endif
+
+MVRLU_LIB = mvrlu-ordo
+ARFLAGS = rvT
+
 # Makefile for Kyoto Cabinet
 
 
@@ -8,57 +34,56 @@
 
 
 # Generic settings
-SHELL = @SHELL@
+SHELL = /bin/sh
 
 # Package information
-PACKAGE = @PACKAGE_NAME@
-PACKAGE_TARNAME = @PACKAGE_TARNAME@
-VERSION = @PACKAGE_VERSION@
+PACKAGE = kyotocabinet
+PACKAGE_TARNAME = kyotocabinet
+VERSION = 1.2.76
 PACKAGEDIR = $(PACKAGE)-$(VERSION)
 PACKAGETGZ = $(PACKAGE)-$(VERSION).tar.gz
-LIBVER = @MYLIBVER@
-LIBREV = @MYLIBREV@
-FORMATVER = @MYFORMATVER@
+LIBVER = 16
+LIBREV = 13
+FORMATVER = 5
 
 # Targets
-HEADERFILES = @MYHEADERFILES@
-LIBRARYFILES = @MYLIBRARYFILES@
-LIBOBJFILES = @MYLIBOBJFILES@
-COMMANDFILES = @MYCOMMANDFILES@
-MAN1FILES = @MYMAN1FILES@
-DOCUMENTFILES = @MYDOCUMENTFILES@
-PCFILES = @MYPCFILES@
+HEADERFILES = kccommon.h kcutil.h kcthread.h kcfile.h kccompress.h kccompare.h kcmap.h kcregex.h kcdb.h kcplantdb.h kcprotodb.h kcstashdb.h kccachedb.h kchashdb.h kcdirdb.h kctextdb.h kcpolydb.h kcdbext.h kclangc.h
+LIBRARYFILES = libkyotocabinet.a # libkyotocabinet.so.16.13.0 libkyotocabinet.so.16 libkyotocabinet.so
+LIBOBJFILES = kcutil.o kcthread.o kcfile.o kccompress.o kccompare.o kcmap.o kcregex.o kcdb.o kcplantdb.o kcprotodb.o kcstashdb.o kccachedb.o kchashdb.o kcdirdb.o kctextdb.o kcpolydb.o kcdbext.o kclangc.o modp_b64.o rlu.o
+COMMANDFILES = kcutiltest$(MOD_SUFFIX) kcutilmgr$(MOD_SUFFIX) kcprototest$(MOD_SUFFIX) kcstashtest$(MOD_SUFFIX) kccachetest$(MOD_SUFFIX) kcgrasstest$(MOD_SUFFIX) kchashtest$(MOD_SUFFIX) kchashmgr$(MOD_SUFFIX) kctreetest$(MOD_SUFFIX) kctreemgr$(MOD_SUFFIX) kcdirtest$(MOD_SUFFIX) kcdirmgr$(MOD_SUFFIX) kcforesttest$(MOD_SUFFIX) kcforestmgr$(MOD_SUFFIX) kcpolytest$(MOD_SUFFIX) kcpolymgr$(MOD_SUFFIX) benchmark$(MOD_SUFFIX)# kclangctest$(MOD_SUFFIX)
+MAN1FILES = kcutiltest.1 kcutilmgr.1 kcprototest.1 kcstashtest.1 kccachetest.1 kcgrasstest.1 kchashtest.1 kchashmgr.1 kctreetest.1 kctreemgr.1 kcdirtest.1 kcdirmgr.1 kcforesttest.1 kcforestmgr.1 kcpolytest.1 kcpolymgr.1 kclangctest.1 benchmark.1
+DOCUMENTFILES = COPYING FOSSEXCEPTION ChangeLog doc kyotocabinet.idl
+PCFILES = kyotocabinet.pc
 
 # Install destinations
-prefix = @prefix@
-exec_prefix = @exec_prefix@
-datarootdir = @datarootdir@
-INCLUDEDIR = @includedir@
-LIBDIR = @libdir@
-BINDIR = @bindir@
-LIBEXECDIR = @libexecdir@
-DATADIR = @datadir@/$(PACKAGE)
-MAN1DIR = @mandir@/man1
-DOCDIR = @docdir@
-PCDIR = @libdir@/pkgconfig
+prefix = /usr/local
+exec_prefix = ${prefix}
+datarootdir = ${prefix}/share
+INCLUDEDIR = ${prefix}/include
+LIBDIR = ${exec_prefix}/lib
+BINDIR = ${exec_prefix}/bin
+LIBEXECDIR = ${exec_prefix}/libexec
+DATADIR = ${datarootdir}/$(PACKAGE)
+MAN1DIR = ${datarootdir}/man/man1
+DOCDIR = ${datarootdir}/doc/${PACKAGE_TARNAME}
+PCDIR = ${exec_prefix}/lib/pkgconfig
 DESTDIR =
 
 # Building configuration
-CC = @CC@
-CXX = @CXX@
-CPPFLAGS = @MYCPPFLAGS@ \
+CC = gcc
+CXX = g++
+CPPFLAGS = -I. -I$(INCLUDEDIR) -I$(INC_DIR) -I/usr/local/include -DNDEBUG -D_GNU_SOURCE=1 -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D__EXTENSIONS__ -D_MYGCCATOMIC \
   -D_KC_PREFIX="\"$(prefix)\"" -D_KC_INCLUDEDIR="\"$(INCLUDEDIR)\"" \
   -D_KC_LIBDIR="\"$(LIBDIR)\"" -D_KC_BINDIR="\"$(BINDIR)\"" -D_KC_LIBEXECDIR="\"$(LIBEXECDIR)\"" \
-  -D_KC_APPINC="\"-I$(INCLUDEDIR)\"" -D_KC_APPLIBS="\"-L$(LIBDIR) -lkyotocabinet @LIBS@\""
-CFLAGS = @MYCFLAGS@
-CXXFLAGS = @MYCXXFLAGS@
-LDFLAGS = @MYLDFLAGS@
-CMDLDFLAGS = @MYCMDLDFLAGS@
-CMDLIBS = @MYCMDLIBS@
-LIBS = @LIBS@
-RUNENV = @MYLDLIBPATHENV@=@MYLDLIBPATH@
-POSTCMD = @MYPOSTCMD@
-
+  -D_KC_APPINC="\"-I$(INCLUDEDIR)\"" -D_KC_APPLIBS="\"-L$(LIBDIR) -lkyotocabinet -lz -lstdc++ -lrt -lpthread -lm -lc \"" $(MOD_CFLAG) # -D_MYZLIB 
+CFLAGS = -march=native -m64 -g -O2 -Wall -ansi -pedantic -fsigned-char -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter # -fPIC
+CXXFLAGS = -march=native -m64 -g -O2 -Wall -fsigned-char -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter # -fPIC
+LDFLAGS = -L. -L$(LIBDIR) -L/usr/local/lib -lpthread -lrt -Wl,-rpath-link,.:/usr/local/lib:.:/usr/local/lib: -Wl,--as-needed # -L$(LIB_DIR) -l$(MVRLU_LIB)
+CMDLDFLAGS = 
+CMDLIBS = 
+LIBS = -lz -lstdc++ -lrt -lpthread -lm -lc 
+RUNENV = LD_LIBRARY_PATH=.:/usr/local/lib:
+POSTCMD = true
 
 
 #================================================================
@@ -95,7 +120,6 @@ clean :
 	  *.o *.gch a.out check.in check.out gmon.out *.log *.vlog words.tsv \
 	  casket* *.kch *.kct *.kcd *.kcf *.wal *.tmpkc* *.kcss *~ hoge moge tako ika
 
-
 version :
 	sed -e 's/_KC_VERSION.*/_KC_VERSION    "$(VERSION)"/' \
 	  -e "s/_KC_LIBVER.*/_KC_LIBVER     $(LIBVER)/" \
@@ -110,6 +134,12 @@ untabify :
 	    sed -e 's/\t/        /g' -e 's/ *$$//' $$name > $$name~; \
 	    [ -f $$name~ ] && mv -f $$name~ $$name ; \
 	  done
+
+
+install-all :
+	cp $(CUR_DIR)/*-rlu $(BIN_DIR)
+	cp $(CUR_DIR)/*-mvrlu-ordo $(BIN_DIR)
+	cp $(CUR_DIR)/*-vanilla $(BIN_DIR)
 
 
 install :
@@ -155,9 +185,11 @@ dist :
 
 distclean : clean
 	cd example && $(MAKE) clean
-	rm -rf Makefile kyotocabinet.pc \
-	  config.cache config.log config.status config.tmp autom4te.cache
-
+	rm $(CUR_DIR)/*-rlu
+	rm $(CUR_DIR)/*-mvrlu-ordo
+	rm $(CUR_DIR)/*-vanilla
+#	rm -rf Makefile kyotocabinet.pc \
+#	  config.cache config.log config.status config.tmp autom4te.cache
 
 check :
 	$(MAKE) check-util
@@ -1016,7 +1048,7 @@ def : libkyotocabinet.a
 	./lab/makevcdef libkyotocabinet.a > kyotocabinet.def
 
 
-.PHONY : all clean install check doc
+.PHONY : all clean install check doc install-all
 
 
 
@@ -1026,7 +1058,7 @@ def : libkyotocabinet.a
 
 
 libkyotocabinet.a : $(LIBOBJFILES)
-	$(AR) $(ARFLAGS) $@ $(LIBOBJFILES)
+	$(AR) $(ARFLAGS) $@ $(LIBOBJFILES) $(LIB_DIR)/lib$(MVRLU_LIB).a
 
 
 libkyotocabinet.so.$(LIBVER).$(LIBREV).0 : $(LIBOBJFILES)
@@ -1062,75 +1094,73 @@ libkyotocabinet.$(LIBVER).dylib : libkyotocabinet.$(LIBVER).$(LIBREV).0.dylib
 libkyotocabinet.dylib : libkyotocabinet.$(LIBVER).$(LIBREV).0.dylib
 	ln -f -s libkyotocabinet.$(LIBVER).$(LIBREV).0.dylib $@
 
-
-kcutiltest : kcutiltest.o kcutil.o $(LIBRARYFILES)
+kcutiltest$(MOD_SUFFIX) : kcutiltest.o kcutil.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ kcutil.o $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcutilmgr : kcutilmgr.o $(LIBRARYFILES)
+kcutilmgr$(MOD_SUFFIX) : kcutilmgr.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcprototest : kcprototest.o $(LIBRARYFILES)
+kcprototest$(MOD_SUFFIX) : kcprototest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcstashtest : kcstashtest.o $(LIBRARYFILES)
+kcstashtest$(MOD_SUFFIX) : kcstashtest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kccachetest : kccachetest.o $(LIBRARYFILES)
+kccachetest$(MOD_SUFFIX) : kccachetest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
-benchmark : benchmark.o $(LIBRARYFILES)
+benchmark$(MOD_SUFFIX) : benchmark.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
-
-kcgrasstest : kcgrasstest.o $(LIBRARYFILES)
-	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
-
-
-kchashtest : kchashtest.o $(LIBRARYFILES)
+kcgrasstest$(MOD_SUFFIX) : kcgrasstest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kchashmgr : kchashmgr.o $(LIBRARYFILES)
+kchashtest$(MOD_SUFFIX) : kchashtest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kctreetest : kctreetest.o $(LIBRARYFILES)
+kchashmgr$(MOD_SUFFIX) : kchashmgr.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kctreemgr : kctreemgr.o $(LIBRARYFILES)
+kctreetest$(MOD_SUFFIX) : kctreetest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcdirtest : kcdirtest.o $(LIBRARYFILES)
+kctreemgr$(MOD_SUFFIX) : kctreemgr.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcdirmgr : kcdirmgr.o $(LIBRARYFILES)
+kcdirtest$(MOD_SUFFIX) : kcdirtest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcforesttest : kcforesttest.o $(LIBRARYFILES)
+kcdirmgr$(MOD_SUFFIX) : kcdirmgr.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcforestmgr : kcforestmgr.o $(LIBRARYFILES)
+kcforesttest$(MOD_SUFFIX) : kcforesttest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcpolytest : kcpolytest.o $(LIBRARYFILES)
+kcforestmgr$(MOD_SUFFIX) : kcforestmgr.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kcpolymgr : kcpolymgr.o $(LIBRARYFILES)
+kcpolytest$(MOD_SUFFIX) : kcpolytest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
-kclangctest : kclangctest.o $(LIBRARYFILES)
+kcpolymgr$(MOD_SUFFIX) : kcpolymgr.o $(LIBRARYFILES) $(LIBMVRLU)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
+
+
+kclangctest$(MOD_SUFFIX) : kclangctest.o $(LIBRARYFILES) $(LIBMVRLU)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -lkyotocabinet $(CMDLIBS)
 
 
@@ -1214,7 +1244,7 @@ kccachetest.o : \
   kcplantdb.h kccachedb.h cmdcommon.h
 
 benchmark.o : \
-  kccommon.h kcdb.h kcutil.h kcthread.h kcfile.h kccompress.h kccompare.h \
+  benchmark.h kccommon.h kcdb.h kcutil.h kcthread.h kcfile.h kccompress.h kccompare.h \
   kcmap.h kcregex.h \
   kcplantdb.h kccachedb.h cmdcommon.h
 

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Portions Copyright (c) 2018-2021 Virginia Tech
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*************************************************************************************************
  * The test cases of the cache hash database
  *                                                               Copyright (C) 2009-2012 FAL Labs
@@ -567,7 +569,7 @@ static int32_t procorder(int64_t rnum, int32_t thnum, bool rnd, bool etc, bool t
     bool tran_;
   };
   ThreadSet threadsets[THREADMAX];
-  if (thnum < 2) {
+  if (0 && thnum < 2) {
     threadsets[0].setparams(0, &db, rnum, thnum, rnd, tran);
     threadsets[0].run();
     if (threadsets[0].error()) err = true;
@@ -638,7 +640,7 @@ static int32_t procorder(int64_t rnum, int32_t thnum, bool rnd, bool etc, bool t
       bool tran_;
     };
     ThreadAdd threadadds[THREADMAX];
-    if (thnum < 2) {
+    if (0 && thnum < 2) {
       threadadds[0].setparams(0, &db, rnum, thnum, rnd, tran);
       threadadds[0].run();
       if (threadadds[0].error()) err = true;
@@ -709,7 +711,7 @@ static int32_t procorder(int64_t rnum, int32_t thnum, bool rnd, bool etc, bool t
       bool tran_;
     };
     ThreadAppend threadappends[THREADMAX];
-    if (thnum < 2) {
+    if (0 && thnum < 2) {
       threadappends[0].setparams(0, &db, rnum, thnum, rnd, tran);
       threadappends[0].run();
       if (threadappends[0].error()) err = true;
@@ -899,7 +901,7 @@ static int32_t procorder(int64_t rnum, int32_t thnum, bool rnd, bool etc, bool t
     bool tran_;
   };
   ThreadGet threadgets[THREADMAX];
-  if (thnum < 2) {
+  if (0 && thnum < 2) {
     threadgets[0].setparams(0, &db, rnum, thnum, rnd, tran);
     threadgets[0].run();
     if (threadgets[0].error()) err = true;
@@ -976,7 +978,7 @@ static int32_t procorder(int64_t rnum, int32_t thnum, bool rnd, bool etc, bool t
       bool tran_;
     };
     ThreadGetBuffer threadgetbuffers[THREADMAX];
-    if (thnum < 2) {
+    if (0 && thnum < 2) {
       threadgetbuffers[0].setparams(0, &db, rnum, thnum, rnd, tran);
       threadgetbuffers[0].run();
       if (threadgetbuffers[0].error()) err = true;
@@ -1369,7 +1371,7 @@ static int32_t procorder(int64_t rnum, int32_t thnum, bool rnd, bool etc, bool t
     bool tran_;
   };
   ThreadRemove threadremoves[THREADMAX];
-  if (thnum < 2) {
+  if (0 && thnum < 2) {
     threadremoves[0].setparams(0, &db, rnum, thnum, rnd, etc, tran);
     threadremoves[0].run();
     if (threadremoves[0].error()) err = true;

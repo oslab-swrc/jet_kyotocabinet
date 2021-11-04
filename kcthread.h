@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Portions Copyright (c) 2018-2021 Virginia Tech
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*************************************************************************************************
  * Threading devices
  *                                                               Copyright (C) 2009-2012 FAL Labs
@@ -18,9 +20,19 @@
 
 #include <kccommon.h>
 #include <kcutil.h>
+#include "myconf.h"
+
+#if defined(MVRLU)
+#include "mvrlu.h"
+#else
+#include "rlu.h"
+#endif
+
 
 namespace kyotocabinet {                 // common namespace
 
+extern thread_local rlu_thread_data_t* self;
+rlu_thread_data_t* get_thread_data(void);
 
 /**
  * Threading device.

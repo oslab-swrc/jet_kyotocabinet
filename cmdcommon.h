@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Portions Copyright (c) 2018-2021 Virginia Tech
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*************************************************************************************************
  * Common symbols for command line utilities
  *                                                               Copyright (C) 2009-2012 FAL Labs
@@ -52,7 +54,7 @@ namespace kc = kyotocabinet;
 
 
 // constants
-const int32_t THREADMAX = 64;            // maximum number of threads
+const int32_t THREADMAX = 448;            // maximum number of threads
 const size_t RECBUFSIZ = 64;             // buffer size for a record
 const size_t RECBUFSIZL = 1024;          // buffer size for a long record
 
